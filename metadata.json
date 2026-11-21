@@ -1,0 +1,6 @@
+{
+  "name": "Aura Player",
+  "description": "Creator Edition media player, background MediaSession audio engine, multi-track Media3 video editor, and encrypted offline file sharing studio.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,22 @@
+<resources>
+    <string name="app_name">Aura Player</string>
+    <string name="channel_playback_name">Aura Playback</string>
+    <string name="channel_playback_desc">Persistent audio playback and lock-screen controls</string>
+    <string name="channel_transfer_name">Aura Share Transfers</string>
+    <string name="channel_transfer_desc">Encrypted local peer-to-peer file transfers</string>
+    <string name="channel_export_name">Aura Video Exports</string>
+    <string name="channel_export_desc">Media3 Transformer video rendering progress</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_music">Music</string>
+    <string name="nav_video">Video</string>
+    <string name="nav_editor">Studio</string>
+    <string name="nav_share">Share</string>
+    <string name="private_space_title">Private Space</string>
+    <string name="smart_albums_title">Smart Albums</string>
+    <string name="download_center_title">Download Center</string>
+    <string name="playlists_title">Playlists</string>
+    <string name="settings_title">Settings</string>
+    <string name="export_screen_title">Export Studio</string>
+    <string name="discovery_screen_title">Device Discovery</string>
+    <string name="transfer_history_title">Transfer History</string>
+</resources>
