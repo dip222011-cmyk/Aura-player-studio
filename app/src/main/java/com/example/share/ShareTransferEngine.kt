@@ -377,6 +377,8 @@ class ShareTransferEngine @Inject constructor(
 
     private suspend fun handleIncomingClient(socket: Socket, saveFolderDir: File) {
         withContext(Dispatchers.IO) {
+            var promptForThisClient: IncomingTransferPrompt? = null
+            var deferredForThisClient: CompletableDeferred<Boolean>? = null
             try {
                 socket.soTimeout = 30_000
                 val input = DataInputStream(socket.getInputStream())
@@ -408,8 +410,7 @@ class ShareTransferEngine @Inject constructor(
 
                 // Explicit User Consent Gate — never silently receive files!
                 val deferred = CompletableDeferred<Boolean>()
-                consentDeferred = deferred
-                _incomingPrompt.value = IncomingTransferPrompt(
+                val prompt = IncomingTransferPrompt(
                     requestId = UUID.randomUUID().toString(),
                     senderName = senderName,
                     senderFingerprint = senderId.take(10),
@@ -417,8 +418,15 @@ class ShareTransferEngine @Inject constructor(
                     totalBytes = totalBytes,
                     isEncrypted = true
                 )
+                deferredForThisClient = deferred
+                promptForThisClient = prompt
+                consentDeferred = deferred
+                _incomingPrompt.value = prompt
 
                 val accepted = deferred.await()
+                if (_incomingPrompt.value?.requestId == prompt.requestId) {
+                    _incomingPrompt.value = null
+                }
                 if (!accepted) {
                     out.writeUTF(CONSENT_DECLINE)
                     out.flush()
@@ -482,8 +490,6 @@ class ShareTransferEngine @Inject constructor(
 
                     if (finalFile.exists()) finalFile.delete()
                     partFile.renameTo(finalFile)
-                    out.writeUTF(VERIFY_OK)
-                    out.flush()
 
                     val savedUri = Uri.fromFile(finalFile).toString()
                     mediaRepository.importLocalUri(
@@ -506,6 +512,8 @@ class ShareTransferEngine @Inject constructor(
                             encrypted = true
                         )
                     )
+                    out.writeUTF(VERIFY_OK)
+                    out.flush()
                 }
 
                 _activeTransfer.value = _activeTransfer.value?.copy(
@@ -518,7 +526,12 @@ class ShareTransferEngine @Inject constructor(
                     errorMessage = e.localizedMessage ?: "Incoming transfer interrupted"
                 )
             } finally {
-                _incomingPrompt.value = null
+                if (promptForThisClient != null && _incomingPrompt.value?.requestId == promptForThisClient.requestId) {
+                    _incomingPrompt.value = null
+                }
+                if (deferredForThisClient != null && consentDeferred === deferredForThisClient) {
+                    consentDeferred = null
+                }
                 runCatching { socket.close() }
             }
         }

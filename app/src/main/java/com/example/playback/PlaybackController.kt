@@ -62,7 +62,7 @@ class PlaybackController @Inject constructor(
         }, ContextCompat.getMainExecutor(context))
     }
 
-    fun playQueue(tracks: List<AuraMediaItem>, startIndex: Int = 0) {
+    fun playQueue(tracks: List<AuraMediaItem>, startIndex: Int = 0, startPositionMs: Long = 0L) {
         if (tracks.isEmpty()) return
         currentQueue = tracks
         val safeIndex = startIndex.coerceIn(0, tracks.lastIndex)
@@ -76,7 +76,7 @@ class PlaybackController @Inject constructor(
                     attempts++
                 }
                 controller?.let { ready ->
-                    applyQueueAndPlay(ready, tracks, safeIndex)
+                    applyQueueAndPlay(ready, tracks, safeIndex, startPositionMs)
                 }
             }
             // Optimistically update UI state while service connects
@@ -88,24 +88,43 @@ class PlaybackController @Inject constructor(
                     artist = selected.artistOrCreator,
                     artworkUri = selected.artworkUri,
                     durationMs = selected.durationMs,
+                    positionMs = startPositionMs.coerceAtLeast(0L),
                     queue = tracks
                 )
             }
         } else {
-            applyQueueAndPlay(mc, tracks, safeIndex)
+            applyQueueAndPlay(mc, tracks, safeIndex, startPositionMs)
         }
     }
 
-    private fun applyQueueAndPlay(mc: MediaController, tracks: List<AuraMediaItem>, startIndex: Int) {
+    private fun applyQueueAndPlay(
+        mc: MediaController,
+        tracks: List<AuraMediaItem>,
+        startIndex: Int,
+        startPositionMs: Long = 0L
+    ) {
         val mediaItems = tracks.map { it.toMedia3Item() }
-        mc.setMediaItems(mediaItems, startIndex, 0L)
+        val state = _uiState.value
+        mc.repeatMode = state.repeatMode
+        mc.shuffleModeEnabled = state.shuffleEnabled
+        mc.setPlaybackSpeed(state.playbackSpeed.coerceIn(0.5f, 2.0f))
+        mc.setMediaItems(mediaItems, startIndex, startPositionMs.coerceAtLeast(0L))
         mc.prepare()
         mc.play()
         syncFromController(mc)
     }
 
     fun togglePlayPause() {
-        val mc = controller ?: return
+        val mc = controller
+        if (mc == null) {
+            if (currentQueue.isNotEmpty()) {
+                val idx = currentQueue.indexOfFirst { it.id == _uiState.value.currentMediaId }.coerceAtLeast(0)
+                playQueue(currentQueue, idx, startPositionMs = _uiState.value.positionMs)
+            } else {
+                connectIfNeeded()
+            }
+            return
+        }
         if (mc.isPlaying) {
             mc.pause()
         } else {
@@ -117,12 +136,21 @@ class PlaybackController @Inject constructor(
     }
 
     fun seekTo(positionMs: Long) {
-        controller?.seekTo(positionMs.coerceAtLeast(0L))
-        _uiState.update { it.copy(positionMs = positionMs.coerceAtLeast(0L)) }
+        val clamped = positionMs.coerceAtLeast(0L)
+        controller?.seekTo(clamped)
+        _uiState.update { it.copy(positionMs = clamped) }
     }
 
     fun next() {
-        val mc = controller ?: return
+        val mc = controller
+        if (mc == null) {
+            if (currentQueue.isNotEmpty()) {
+                val idx = currentQueue.indexOfFirst { it.id == _uiState.value.currentMediaId }
+                val nextIdx = if (idx >= 0) (idx + 1) % currentQueue.size else 0
+                playQueue(currentQueue, nextIdx)
+            }
+            return
+        }
         if (mc.hasNextMediaItem()) {
             mc.seekToNextMediaItem()
         } else if (mc.mediaItemCount > 0) {
@@ -132,7 +160,15 @@ class PlaybackController @Inject constructor(
     }
 
     fun previous() {
-        val mc = controller ?: return
+        val mc = controller
+        if (mc == null) {
+            if (currentQueue.isNotEmpty()) {
+                val idx = currentQueue.indexOfFirst { it.id == _uiState.value.currentMediaId }.coerceAtLeast(0)
+                val prevIdx = if (idx > 0) idx - 1 else currentQueue.lastIndex
+                playQueue(currentQueue, prevIdx)
+            }
+            return
+        }
         if (mc.currentPosition > 3_000L) {
             mc.seekTo(0L)
         } else if (mc.hasPreviousMediaItem()) {
@@ -150,20 +186,20 @@ class PlaybackController @Inject constructor(
     }
 
     fun cycleRepeatMode() {
-        val mc = controller ?: return
-        val next = when (mc.repeatMode) {
+        val currentMode = controller?.repeatMode ?: _uiState.value.repeatMode
+        val next = when (currentMode) {
             Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
             Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
             else -> Player.REPEAT_MODE_OFF
         }
-        mc.repeatMode = next
+        controller?.repeatMode = next
         _uiState.update { it.copy(repeatMode = next) }
     }
 
     fun toggleShuffle() {
-        val mc = controller ?: return
-        val next = !mc.shuffleModeEnabled
-        mc.shuffleModeEnabled = next
+        val currentShuffle = controller?.shuffleModeEnabled ?: _uiState.value.shuffleEnabled
+        val next = !currentShuffle
+        controller?.shuffleModeEnabled = next
         _uiState.update { it.copy(shuffleEnabled = next) }
     }
 
@@ -191,6 +227,10 @@ class PlaybackController @Inject constructor(
                         artist = initial.artistOrCreator,
                         artworkUri = initial.artworkUri,
                         durationMs = initial.durationMs,
+                        positionMs = if (initial.id == resume.mediaId) resume.positionMs.coerceAtLeast(0L) else 0L,
+                        playbackSpeed = resume.speed.coerceIn(0.5f, 2.0f),
+                        repeatMode = resume.repeatMode,
+                        shuffleEnabled = resume.shuffleEnabled,
                         queue = libraryTracks
                     )
                 }

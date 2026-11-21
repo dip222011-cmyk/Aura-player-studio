@@ -97,7 +97,6 @@ class LibraryViewModel @Inject constructor(
     val exportCapabilities: ExportCapabilities by lazy { capabilityInspector.inspect() }
 
     init {
-        playbackController.connectIfNeeded()
         viewModelScope.launch {
             audioItems.collect { tracks ->
                 if (tracks.isNotEmpty()) {
